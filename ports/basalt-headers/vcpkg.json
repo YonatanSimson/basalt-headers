@@ -16,13 +16,5 @@
     "cereal",
     "eigen3",
     "sophus"
-  ],
-  "features": {
-    "ceres": {
-      "description": "Enable Ceres-dependent spline local parameterization support",
-      "dependencies": [
-        "ceres"
-      ]
-    }
-  }
+  ]
 }
