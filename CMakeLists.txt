@@ -20,8 +20,6 @@ include(CTest)
 
 option(BASALT_HEADERS_ENABLE_INSTALL "Enable install and package export support" ON)
 option(BASALT_HEADERS_BUILD_TESTING "Build basalt-headers tests when used as subproject" OFF)
-option(BASALT_HEADERS_WITH_CERES "Enable optional Ceres dependency for ceres integration headers" OFF)
-
 # Set default build type if not specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -98,13 +96,6 @@ else()
 endif()
 report_dependency_location(cereal cereal::cereal)
 
-# Optional Ceres dependency
-if(BASALT_HEADERS_WITH_CERES)
-  if(NOT TARGET Ceres::ceres AND NOT TARGET ceres)
-    find_package(Ceres REQUIRED)
-  endif()
-endif()
-
 # Main library target
 add_library(basalt-headers INTERFACE)
 add_library(basalt::basalt-headers ALIAS basalt-headers)
@@ -134,14 +125,6 @@ target_link_libraries(basalt-headers
     Sophus::Sophus
     cereal::cereal
 )
-
-if(BASALT_HEADERS_WITH_CERES)
-  if(TARGET Ceres::ceres)
-    target_link_libraries(basalt-headers INTERFACE Ceres::ceres)
-  elseif(TARGET ceres)
-    target_link_libraries(basalt-headers INTERFACE ceres)
-  endif()
-endif()
 
 # Set C++ standard requirement
 target_compile_features(basalt-headers INTERFACE cxx_std_17)
@@ -218,11 +201,6 @@ set(CPACK_SOURCE_IGNORE_FILES
 include(CPack)
 
 if(BASALT_HEADERS_ENABLE_INSTALL)
-  set(BASALT_HEADERS_FIND_CERES "")
-  if(BASALT_HEADERS_WITH_CERES)
-    set(BASALT_HEADERS_FIND_CERES "find_dependency(Ceres REQUIRED)")
-  endif()
-
   # Generate package version file
   write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/basalt-headers-config-version.cmake"

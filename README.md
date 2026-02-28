@@ -22,12 +22,6 @@ Install with vcpkg:
 vcpkg install basalt-headers --overlay-ports=/path/to/basalt-headers/ports
 ```
 
-Optional Ceres-dependent headers:
-
-```bash
-vcpkg install basalt-headers[ceres] --overlay-ports=/path/to/basalt-headers/ports
-```
-
 Consume in CMake:
 
 ```cmake
@@ -35,7 +29,7 @@ find_package(basalt-headers CONFIG REQUIRED)
 target_link_libraries(your_target PRIVATE basalt::basalt-headers)
 ```
 
-Note: the vcpkg package is built with external dependencies (`eigen3`, `sophus`, `cereal`, and optional `ceres` feature). This repository no longer vendors these thirdparty libraries.
+Note: the vcpkg package is built with external dependencies (`eigen3`, `sophus`, and `cereal`). This repository no longer vendors these thirdparty libraries.
 
 
 
