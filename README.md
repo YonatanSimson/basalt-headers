@@ -12,6 +12,31 @@ This library includes:
 * Data types to store IMU-camera calibration.
 * Cereal serialization for basalt types as well as some Eigen and Sophus types.
 
+## vcpkg
+
+This repository contains an overlay port at `ports/basalt-headers`.
+
+Install with vcpkg:
+
+```bash
+vcpkg install basalt-headers --overlay-ports=/path/to/basalt-headers/ports
+```
+
+Optional Ceres-dependent headers:
+
+```bash
+vcpkg install basalt-headers[ceres] --overlay-ports=/path/to/basalt-headers/ports
+```
+
+Consume in CMake:
+
+```cmake
+find_package(basalt-headers CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE basalt::basalt-headers)
+```
+
+Note: the vcpkg package is built with external dependencies (`eigen3`, `sophus`, `cereal`, and optional `ceres` feature). This repository no longer vendors these thirdparty libraries.
+
 
 
 ## Related Publications

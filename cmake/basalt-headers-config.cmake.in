@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find dependencies
+find_dependency(Eigen3 REQUIRED)
+find_dependency(Sophus REQUIRED)
+find_dependency(cereal REQUIRED)
+@BASALT_HEADERS_FIND_CERES@
+
+# Include targets file
+include("${CMAKE_CURRENT_LIST_DIR}/basalt-headers-targets.cmake")
+
+check_required_components(basalt-headers)

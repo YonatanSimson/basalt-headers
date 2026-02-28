@@ -1,12 +1,10 @@
 cmake_minimum_required(VERSION 3.10...3.18)
 
-if(NOT TARGET gtest_main)
-    add_subdirectory(googletest EXCLUDE_FROM_ALL)
-endif(NOT TARGET gtest_main)
+find_package(GTest CONFIG REQUIRED)
 
 add_library(basalt-headers-test-utils INTERFACE)
 add_library (basalt::basalt-headers-test-utils ALIAS basalt-headers-test-utils)
-target_link_libraries(basalt-headers-test-utils INTERFACE gtest)
+target_link_libraries(basalt-headers-test-utils INTERFACE GTest::gtest)
 
 target_include_directories(basalt-headers-test-utils INTERFACE include)
 
@@ -21,39 +19,35 @@ target_sources(basalt-headers-test-utils
 )
 
 add_executable(test_image src/test_image.cpp)
-target_link_libraries(test_image gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
+target_link_libraries(test_image GTest::gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
 
 add_executable(test_spline_rd src/test_spline_rd.cpp)
-target_link_libraries(test_spline_rd gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
+target_link_libraries(test_spline_rd GTest::gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
 
 add_executable(test_spline_so3 src/test_spline_so3.cpp)
-target_link_libraries(test_spline_so3 gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
+target_link_libraries(test_spline_so3 GTest::gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
 
 add_executable(test_bezier_rd src/test_bezier_rd.cpp)
-target_link_libraries(test_bezier_rd gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
+target_link_libraries(test_bezier_rd GTest::gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
 
 add_executable(test_spline_se3 src/test_spline_se3.cpp)
-target_link_libraries(test_spline_se3 gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
+target_link_libraries(test_spline_se3 GTest::gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
 
 add_executable(test_camera src/test_camera.cpp)
-target_link_libraries(test_camera gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
+target_link_libraries(test_camera GTest::gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
 
 add_executable(test_sophus src/test_sophus.cpp)
-target_link_libraries(test_sophus gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
+target_link_libraries(test_sophus GTest::gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
 
 add_executable(test_preintegration src/test_preintegration.cpp)
-target_link_libraries(test_preintegration gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
+target_link_libraries(test_preintegration GTest::gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
 
 add_executable(test_ceres_spline_helper src/test_ceres_spline_helper.cpp)
-target_link_libraries(test_ceres_spline_helper gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
+target_link_libraries(test_ceres_spline_helper GTest::gtest_main basalt::basalt-headers-test-utils basalt::basalt-headers)
 
-# benchmarks (currently doesnt work on macOS and with clang)
-if(NOT APPLE AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "ENABLE tests")
-    set(BENCHMARK_ENABLE_EXCEPTIONS OFF CACHE BOOL "ENABLE exceptions")
-    set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "ENABLE gtests")
-    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "ENABLE install")
-    add_subdirectory(benchmark EXCLUDE_FROM_ALL)
+# benchmarks (currently doesnt work on macOS)
+if(NOT APPLE)
+    find_package(benchmark CONFIG REQUIRED)
 
     add_executable(benchmark_camera src/benchmark_camera.cpp)
     target_link_libraries(benchmark_camera benchmark::benchmark basalt::basalt-headers)

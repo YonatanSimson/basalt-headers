@@ -64,7 +64,13 @@ IN THE SOFTWARE.
 
 #pragma once
 
+#if __has_include(<ceres/local_parameterization.h>)
+#define BASALT_HAS_CERES_LOCAL_PARAMETERIZATION 1
 #include <ceres/local_parameterization.h>
+#else
+#define BASALT_HAS_CERES_LOCAL_PARAMETERIZATION 0
+#include <ceres/manifold.h>
+#endif
 #include <sophus/se3.hpp>
 
 namespace basalt {
@@ -72,7 +78,12 @@ namespace basalt {
 /// @brief Local parametrization for ceres that can be used with Sophus Lie
 /// group implementations.
 template <class Groupd>
-class LieLocalParameterization : public ceres::LocalParameterization {
+class LieLocalParameterization
+#if BASALT_HAS_CERES_LOCAL_PARAMETERIZATION
+    : public ceres::LocalParameterization {
+#else
+    : public ceres::Manifold {
+#endif
  public:
   virtual ~LieLocalParameterization() {}
 
@@ -105,11 +116,41 @@ class LieLocalParameterization : public ceres::LocalParameterization {
     return true;
   }
 
+#if BASALT_HAS_CERES_LOCAL_PARAMETERIZATION
   ///@brief Global size
   virtual int GlobalSize() const { return Groupd::num_parameters; }
 
   ///@brief Local size
   virtual int LocalSize() const { return Groupd::DoF; }
+#else
+  virtual bool PlusJacobian(double const* T_raw, double* jacobian_raw) const {
+    return ComputeJacobian(T_raw, jacobian_raw);
+  }
+
+  virtual bool Minus(double const* y_raw, double const* x_raw,
+                     double* y_minus_x_raw) const {
+    Eigen::Map<Groupd const> const x(x_raw);
+    Eigen::Map<Groupd const> const y(y_raw);
+    Eigen::Map<Tangentd> y_minus_x(y_minus_x_raw);
+    y_minus_x = (x.inverse() * y).log();
+    return true;
+  }
+
+  virtual bool MinusJacobian(double const* T_raw, double* jacobian_raw) const {
+    Eigen::Map<Groupd const> T(T_raw);
+    Eigen::Matrix<double, Groupd::num_parameters, Groupd::DoF> J_plus =
+        T.Dx_this_mul_exp_x_at_0();
+    Eigen::Map<Eigen::Matrix<double, Groupd::DoF, Groupd::num_parameters,
+                             Eigen::RowMajor>>
+        J_minus(jacobian_raw);
+    J_minus = (J_plus.transpose() * J_plus).ldlt().solve(J_plus.transpose());
+    return true;
+  }
+
+  virtual int AmbientSize() const { return Groupd::num_parameters; }
+
+  virtual int TangentSize() const { return Groupd::DoF; }
+#endif
 };
 
 }  // namespace basalt

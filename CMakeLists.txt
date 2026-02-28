@@ -1,186 +1,263 @@
-cmake_minimum_required(VERSION 3.10...3.18)
+cmake_minimum_required(VERSION 3.20)
 
 include(CMakePackageConfigHelpers)
 
-project(basalt-headers VERSION 0.1.0 LANGUAGES CXX)
-
-include(GNUInstallDirs)
-include(CTest) # note: this adds a BUILD_TESTING which defaults to ON
-
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-  if (NOT CMAKE_C_COMPILER_LAUNCHER AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
-    find_program(CCACHE_PROGRAM ccache)
-    if(CCACHE_PROGRAM)
-      message(STATUS "Found ccache: ${CCACHE_PROGRAM}")
-      set(CMAKE_C_COMPILER_LAUNCHER   ${CCACHE_PROGRAM})
-      set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
-    else()
-      message(STATUS "Dind't find ccache")
-    endif()
-  else()
-    message(STATUS "Compiler launcher already set. Not configuring ccache.")
-    message(STATUS "CMAKE_C_COMPILER_LAUNCHER: ${CMAKE_C_COMPILER_LAUNCHER}")
-    message(STATUS "CMAKE_CXX_COMPILER_LAUNCHER: ${CMAKE_CXX_COMPILER_LAUNCHER}")
-  endif()
-
-  IF( NOT CMAKE_BUILD_TYPE )
-    SET( CMAKE_BUILD_TYPE Release)
-  ENDIF()
-
-  IF(NOT CXX_MARCH)
-    SET(CXX_MARCH native)
-  ENDIF()
-
-  IF(NOT APPLE OR NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-    set(BASALT_HEADERS_MARCH_FLAGS "-march=${CXX_MARCH}")
-  ELSE()
-    message(STATUS "Running on Apple ${CMAKE_SYSTEM_PROCESSOR}. Disabled -march flag.")
-  ENDIF()
-
-
-  set(CMAKE_CXX_STANDARD 17)
-  set(CMAKE_CXX_STANDARD_REQUIRED ON)
-  set(CMAKE_CXX_EXTENSIONS OFF)
-
-
-  # clang-specific compile flags
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    set(BASALT_HEADERS_CXX_FLAGS "${BASALT_HEADERS_CXX_FLAGS} -Wno-exceptions -fcolor-diagnostics -Wno-error=deprecated-declarations")
-
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
-      # These are disabled to avoid lot's of warnings in Eigen code with clang 10
-      set(BASALT_HEADERS_CXX_FLAGS "${BASALT_HEADERS_CXX_FLAGS} -Wno-misleading-indentation")
-    endif()
-  else()
-    set(BASALT_HEADERS_CXX_FLAGS "${BASALT_HEADERS_CXX_FLAGS} -Wno-error=maybe-uninitialized -Wno-error=array-bounds")
-  endif()
-
-
-  set(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g -DEIGEN_INITIALIZE_MATRICES_BY_NAN")          # cmake default: "-g"
-  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g -DEIGEN_INITIALIZE_MATRICES_BY_NAN")  # cmake default: "-O2 -g -DNDEBUG"
-  set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")                                      # cmake default: "-O3 -DNDEBUG"
-  SET(CMAKE_CXX_FLAGS "-Wall -Werror -Wextra ${BASALT_HEADERS_MARCH_FLAGS} ${CMAKE_CXX_FLAGS} ${BASALT_HEADERS_CXX_FLAGS}")
-  SET(CMAKE_CXX_FLAGS_COVERAGE "${CMAKE_CXX_FLAGS_DEBUG} --coverage -fno-inline -fno-inline-small-functions -fno-default-inline")
-  SET(CMAKE_EXE_LINKER_FLAGS_COVERAGE "${CMAKE_EXE_LINKER_FLAGS_DEBUG} --coverage")
-  SET(CMAKE_SHARED_LINKER_FLAGS_COVERAGE "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} --coverage")
-  set(CMAKE_CXX_FLAGS_SANITIZERDEBUG "-O0 -g -DEIGEN_INITIALIZE_MATRICES_BY_NAN -fno-omit-frame-pointer -fsanitize=address,undefined")
-  set(CMAKE_CXX_FLAGS_SANITIZERRELWITHDEBINFO "-O3 -g -DEIGEN_INITIALIZE_MATRICES_BY_NAN -fno-omit-frame-pointer -fsanitize=address,undefined")
-
+# Set policies for better compatibility
+if(POLICY CMP0167)
+  # The FindBoost module is removed in CMake 4.0
+  cmake_policy(SET CMP0167 NEW)
 endif()
 
+project(basalt-headers
+  VERSION 0.1.0
+  DESCRIPTION "Header-only library for Basalt V-SLAM components"
+  HOMEPAGE_URL "https://gitlab.com/VladyslavUsenko/basalt-headers"
+  LANGUAGES CXX
+)
+
+include(GNUInstallDirs)
+include(CTest)
+
+option(BASALT_HEADERS_ENABLE_INSTALL "Enable install and package export support" ON)
+option(BASALT_HEADERS_BUILD_TESTING "Build basalt-headers tests when used as subproject" OFF)
+option(BASALT_HEADERS_WITH_CERES "Enable optional Ceres dependency for ceres integration headers" OFF)
+
+# Set default build type if not specified
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
+endif()
+
+# Only apply settings when this is the main project
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+  # Enable ccache if available
+  find_program(CCACHE_PROGRAM ccache)
+  if(CCACHE_PROGRAM AND NOT CMAKE_C_COMPILER_LAUNCHER AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+    message(STATUS "Found ccache: ${CCACHE_PROGRAM}")
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE FILEPATH "C compiler launcher")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE FILEPATH "CXX compiler launcher")
+  endif()
+
+  # Platform-specific architecture flags
+  if(NOT APPLE OR NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    if(DEFINED CXX_MARCH AND NOT CXX_MARCH STREQUAL "")
+      set(BASALT_HEADERS_CXX_MARCH "${CXX_MARCH}")
+    elseif(DEFINED ENV{CXX_MARCH} AND NOT "$ENV{CXX_MARCH}" STREQUAL "")
+      set(BASALT_HEADERS_CXX_MARCH "$ENV{CXX_MARCH}")
+    else()
+      set(BASALT_HEADERS_CXX_MARCH "native")
+    endif()
+    set(BASALT_HEADERS_MARCH_FLAG "-march=${BASALT_HEADERS_CXX_MARCH}" CACHE STRING "Architecture flag")
+    # Set build type specific flags
+    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -DEIGEN_INITIALIZE_MATRICES_BY_NAN" CACHE STRING "Debug flags")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "Release flags")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g -DEIGEN_INITIALIZE_MATRICES_BY_NAN" CACHE STRING "RelWithDebInfo flags")
+    set(CMAKE_CXX_FLAGS_SANITIZERDEBUG "-O0 -g -DEIGEN_INITIALIZE_MATRICES_BY_NAN -fno-omit-frame-pointer -fsanitize=address,undefined" CACHE STRING "Sanitizer debug flags")
+    set(CMAKE_CXX_FLAGS_SANITIZERRELWITHDEBINFO "-O3 -g -DEIGEN_INITIALIZE_MATRICES_BY_NAN -fno-omit-frame-pointer -fsanitize=address,undefined" CACHE STRING "Sanitizer relwithdebinfo flags")
+  else()
+    message(STATUS "Running on Apple ${CMAKE_SYSTEM_PROCESSOR}. Disabled -march flag.")
+    set(BASALT_HEADERS_MARCH_FLAG "")
+  endif()
+endif()
+
+# Function to report dependency locations
 function(report_dependency_location DEP_NAME DEP_TARGET)
   if(${DEP_NAME}_DIR)
-    # this is set if dependency is found via find_package
     set(ACTUAL_DEP_CMAKE_DIR ${${DEP_NAME}_DIR})
-  else()
-    if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.19.0")
-      get_target_property(ACTUAL_DEP_CMAKE_DIR ${DEP_TARGET} SOURCE_DIR)
-    else()
-      # SOURCE_DIR works for interface targets only since 3.19
-      set(ACTUAL_DEP_CMAKE_DIR "")
-    endif()
+  elseif(CMAKE_VERSION VERSION_GREATER_EQUAL "3.19.0")
+    get_target_property(ACTUAL_DEP_CMAKE_DIR ${DEP_TARGET} SOURCE_DIR)
   endif()
   get_target_property(ACTUAL_DEP_INCLUDE_DIR ${DEP_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
   message(STATUS "Using ${DEP_NAME} from: ${ACTUAL_DEP_CMAKE_DIR} (include: ${ACTUAL_DEP_INCLUDE_DIR})")
 endfunction()
 
-option(BASALT_BUILTIN_EIGEN "Use builtin Eigen from submodule" ON)
+# Eigen dependency
 if(NOT TARGET Eigen3::Eigen)
-  if(BASALT_BUILTIN_EIGEN)
-    message(STATUS "Including internal Eigen from submodule")
-    # Disable Eigen tests
-    set(BUILD_TESTING_PREV_VALUE ${BUILD_TESTING})  # Note: BUILD_TESTING is always defined because we include CTest above
-    set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-    set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
-    add_subdirectory(thirdparty/eigen EXCLUDE_FROM_ALL)
-    # Restore previous value of BUILD_TESTING
-    set(BUILD_TESTING ${BUILD_TESTING_PREV_VALUE} CACHE BOOL "Build the testing tree." FORCE)
-  else()
-    message(STATUS "Finding external Eigen")
-    find_package(Eigen3 3.4 REQUIRED)
-  endif()
+  message(STATUS "Finding external Eigen")
+  find_package(Eigen3 5.0 REQUIRED)
 else()
   message(STATUS "Eigen already available")
 endif()
 report_dependency_location(Eigen3 Eigen3::Eigen)
 
-option(BASALT_BUILTIN_SOPHUS "Use builtin Sophus from submodule" ON)
+# Sophus dependency
 if(NOT TARGET Sophus::Sophus)
-  if(BASALT_BUILTIN_SOPHUS)
-    message(STATUS "Including internal Sophus from submodule")
-    set(BUILD_SOPHUS_TESTS OFF CACHE BOOL "disable BUILD_SOPHUS_TESTS")
-    set(BUILD_SOPHUS_EXAMPLES OFF CACHE BOOL "disable BUILD_SOPHUS_EXAMPLES")
-    add_subdirectory(thirdparty/Sophus EXCLUDE_FROM_ALL)
-  else()
-    message(STATUS "Finding external Sophus")
-    find_package(Sophus REQUIRED)
-  endif()
+  message(STATUS "Finding external Sophus")
+  find_package(Sophus REQUIRED)
 else()
   message(STATUS "Sophus already available")
 endif()
 report_dependency_location(Sophus Sophus::Sophus)
 
-option(BASALT_BUILTIN_CEREAL "Use builtin Cereal from submodule" ON)
+# Cereal dependency
 if(NOT TARGET cereal::cereal)
-  if(BASALT_BUILTIN_CEREAL)
-    message(STATUS "Including internal Cereal from submodule")
-    add_subdirectory(thirdparty/cereal EXCLUDE_FROM_ALL)
-  else()
-    message(STATUS "Finding external Cereal")
-    find_package(cereal REQUIRED)
-  endif()
+  message(STATUS "Finding external Cereal")
+  find_package(cereal REQUIRED)
 else()
   message(STATUS "Cereal already available")
 endif()
 report_dependency_location(cereal cereal::cereal)
 
+# Optional Ceres dependency
+if(BASALT_HEADERS_WITH_CERES)
+  if(NOT TARGET Ceres::ceres AND NOT TARGET ceres)
+    find_package(Ceres REQUIRED)
+  endif()
+endif()
+
+# Main library target
 add_library(basalt-headers INTERFACE)
-add_library (basalt::basalt-headers ALIAS basalt-headers)
-target_link_libraries(basalt-headers INTERFACE Eigen3::Eigen Sophus::Sophus cereal::cereal)
+add_library(basalt::basalt-headers ALIAS basalt-headers)
 
-# Associate target with include directory
-target_include_directories(basalt-headers INTERFACE
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-    "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+# Collect all headers automatically
+file(GLOB_RECURSE BASALT_HEADER_FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/*.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/*.hpp
 )
+list(SORT BASALT_HEADER_FILES)
 
-# List all header files with target_sources.
-# This ensures, e.g., that QtCreator >= 6.0 properly recognize these headers to belong to the project.
-# To support cmake < 3.13, use absolute paths (see: https://crascit.com/2016/01/31/enhanced-source-file-handling-with-target_sources/)
-target_sources(basalt-headers
+# Verify we found headers
+list(LENGTH BASALT_HEADER_FILES BASALT_HEADER_COUNT)
+message(STATUS "Found ${BASALT_HEADER_COUNT} header files")
+
+# Set include directories
+target_include_directories(basalt-headers
   INTERFACE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/calibration/calib_bias.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/calibration/calibration.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/camera/bal_camera.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/camera/camera_static_assert.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/camera/double_sphere_camera.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/camera/extended_camera.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/camera/fov_camera.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/camera/generic_camera.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/camera/kannala_brandt_camera4.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/camera/pinhole_camera.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/camera/stereographic_param.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/camera/unified_camera.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/image/image.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/image/image_pyr.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/imu/imu_types.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/imu/preintegration.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/serialization/eigen_io.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/serialization/headers_serialization.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/spline/ceres_local_param.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/spline/ceres_spline_helper.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/spline/rd_bezier.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/spline/rd_spline.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/spline/se3_spline.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/spline/so3_spline.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/spline/spline_common.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/utils/assert.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/utils/eigen_utils.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/utils/hash.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/basalt/utils/sophus_utils.hpp
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
+# Link dependencies
+target_link_libraries(basalt-headers
+  INTERFACE
+    Eigen3::Eigen
+    Sophus::Sophus
+    cereal::cereal
+)
+
+if(BASALT_HEADERS_WITH_CERES)
+  if(TARGET Ceres::ceres)
+    target_link_libraries(basalt-headers INTERFACE Ceres::ceres)
+  elseif(TARGET ceres)
+    target_link_libraries(basalt-headers INTERFACE ceres)
+  endif()
+endif()
+
+# Set C++ standard requirement
+target_compile_features(basalt-headers INTERFACE cxx_std_17)
+
+# Set compile options using generator expressions
+# Note: Using simpler approach that works with all CMake versions
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+  target_compile_options(basalt-headers
+    INTERFACE
+      $<BUILD_INTERFACE:$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall>>
+      $<BUILD_INTERFACE:$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wextra>>
+      $<BUILD_INTERFACE:$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-exceptions>>
+      $<BUILD_INTERFACE:$<$<CXX_COMPILER_ID:Clang,AppleClang>:-fcolor-diagnostics>>
+      $<BUILD_INTERFACE:$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-error=deprecated-declarations>>
+      $<BUILD_INTERFACE:$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-unused-command-line-argument>>
+      $<BUILD_INTERFACE:$<$<AND:$<CXX_COMPILER_ID:Clang>,$<VERSION_GREATER_EQUAL:$<CXX_COMPILER_VERSION>,10>>:-Wno-misleading-indentation>>
+      $<BUILD_INTERFACE:$<$<CXX_COMPILER_ID:GNU>:-Wno-error=maybe-uninitialized>>
+      $<BUILD_INTERFACE:$<$<CXX_COMPILER_ID:GNU>:-Wno-error=array-bounds>>
+  )
+endif()
+
+# Set -Werror separately to avoid issues with generator expressions and ccache
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    # For Clang, add -Werror but allow command line argument warnings (for ccache)
+    target_compile_options(basalt-headers INTERFACE $<BUILD_INTERFACE:-Werror>)
+  else()
+    # For GCC, just add -Werror
+    target_compile_options(basalt-headers INTERFACE $<BUILD_INTERFACE:-Werror>)
+  endif()
+endif()
+
+
+# Set architecture-specific flags more simply
+if(NOT APPLE OR NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+  if(BASALT_HEADERS_MARCH_FLAG)
+    target_compile_options(basalt-headers INTERFACE $<BUILD_INTERFACE:${BASALT_HEADERS_MARCH_FLAG}>)
+  endif()
+endif()
+
+
+# Build tests if requested
 if((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME OR BASALT_HEADERS_BUILD_TESTING) AND BUILD_TESTING)
   enable_testing()
   add_subdirectory(test)
+endif()
+
+# CPack configuration for package generation
+set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Header-only library for Basalt V-SLAM components")
+set(CPACK_PACKAGE_HOMEPAGE_URL ${PROJECT_HOMEPAGE_URL})
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+set(CPACK_PACKAGE_VENDOR "Vladyslav Usenko")
+
+# DEB/RPM specific settings
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libeigen3-dev")
+set(CPACK_RPM_PACKAGE_REQUIRES "eigen3-devel")
+
+# Source package settings
+set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
+set(CPACK_SOURCE_IGNORE_FILES
+  "/.git/"
+  "/build/"
+  "/.cmake_build/"
+  "/cmake-build-*/"
+  "/.cache/"
+  "/.idea/"
+  ".swp"
+  ".DS_Store"
+)
+
+include(CPack)
+
+if(BASALT_HEADERS_ENABLE_INSTALL)
+  set(BASALT_HEADERS_FIND_CERES "")
+  if(BASALT_HEADERS_WITH_CERES)
+    set(BASALT_HEADERS_FIND_CERES "find_dependency(Ceres REQUIRED)")
+  endif()
+
+  # Generate package version file
+  write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/basalt-headers-config-version.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+  )
+
+  # Create config file
+  configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/basalt-headers-config.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/basalt-headers-config.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/basalt-headers
+  )
+
+  # Install targets
+  install(TARGETS basalt-headers
+    EXPORT basalt-headers-targets
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+
+  # Install headers
+  install(DIRECTORY include/basalt
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+
+  # Install config files
+  install(EXPORT basalt-headers-targets
+    FILE basalt-headers-targets.cmake
+    NAMESPACE basalt::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/basalt-headers
+  )
+
+  install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/basalt-headers-config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/basalt-headers-config-version.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/basalt-headers
+  )
 endif()
