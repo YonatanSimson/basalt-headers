@@ -16,3 +16,4 @@ repos:
     rev: v20.1.3
     hooks:
     -   id: clang-format
+        files: \.(c|cc|cp|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|inc|inl|ipp|ixx|cu|cuh)$
