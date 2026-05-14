@@ -247,6 +247,28 @@ inline void load(Archive& ar, basalt::BalCamera<Scalar>& cam) {
   cam = basalt::BalCamera<Scalar>(intr);
 }
 
+// Equirectangular: intrinsics are derived from (W, H) and frozen, so we
+// serialize them but re-derive on load to keep them consistent with the
+// resolution stored alongside.
+template <class Archive, class Scalar>
+inline void save(Archive& ar,
+                 const basalt::EquirectangularCamera<Scalar>& cam) {
+  ar(cereal::make_nvp("fx", cam.getParam()[0]),
+     cereal::make_nvp("fy", cam.getParam()[1]),
+     cereal::make_nvp("cx", cam.getParam()[2]),
+     cereal::make_nvp("cy", cam.getParam()[3]));
+}
+
+template <class Archive, class Scalar>
+inline void load(Archive& ar, basalt::EquirectangularCamera<Scalar>& cam) {
+  Eigen::Matrix<Scalar, 4, 1> intr;
+
+  ar(cereal::make_nvp("fx", intr[0]), cereal::make_nvp("fy", intr[1]),
+     cereal::make_nvp("cx", intr[2]), cereal::make_nvp("cy", intr[3]));
+
+  cam = basalt::EquirectangularCamera<Scalar>(intr);
+}
+
 template <class Archive, class Scalar, int DIM, int ORDER>
 inline void save(Archive& ar,
                  const basalt::RdSpline<DIM, ORDER, Scalar>& spline) {

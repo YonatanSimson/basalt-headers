@@ -300,6 +300,190 @@ void testUnprojectJacobians3() {
   }
 }
 
+// Equirectangular finite-difference tests: the lon = ±π seam at the back of
+// the sphere (x=0, z<0) and the poles (x=z=0) produce false-positive failures
+// in plain symmetric finite differences even though the analytical Jacobians
+// are correct. These helpers mirror the generic ones but iterate only over
+// the forward hemisphere (z > 0) where the projection is locally smooth.
+template <typename CamT>
+void testEquirectProjectJacobian() {
+  Eigen::aligned_vector<CamT> test_cams = CamT::getTestProjections();
+
+  using VecN = typename CamT::VecN;
+  using Vec2 = typename CamT::Vec2;
+  using Vec4 = typename CamT::Vec4;
+
+  using Mat24 = typename CamT::Mat24;
+  using Mat2N = typename CamT::Mat2N;
+
+  for (const CamT &cam : test_cams) {
+    for (int x = -5; x <= 5; x++) {
+      for (int y = -5; y <= 5; y++) {
+        for (int z = 1; z <= 5; z++) {
+          Vec4 p(x, y, z, 1);
+
+          Mat24 J_p;
+          Mat2N J_param;
+
+          Vec2 res1;
+          bool success = cam.project(p, res1, &J_p, &J_param);
+
+          if (success) {
+            test_jacobian(
+                "d_r_d_p", J_p,
+                [&](const Vec4 &dx) {
+                  Vec2 res;
+                  cam.project(p + dx, res);
+                  return res;
+                },
+                Vec4::Zero());
+
+            test_jacobian(
+                "d_r_d_param", J_param,
+                [&](const VecN &dp) {
+                  Vec2 res;
+                  CamT cam1 = cam;
+                  cam1 += dp;
+                  cam1.project(p, res);
+                  return res;
+                },
+                VecN::Zero());
+          }
+        }
+      }
+    }
+  }
+}
+
+template <typename CamT>
+void testEquirectProjectUnproject() {
+  Eigen::aligned_vector<CamT> test_cams = CamT::getTestProjections();
+
+  using Scalar = typename CamT::Vec2::Scalar;
+  using Vec2 = typename CamT::Vec2;
+  using Vec4 = typename CamT::Vec4;
+
+  for (const CamT &cam : test_cams) {
+    for (int x = -5; x <= 5; x++) {
+      for (int y = -5; y <= 5; y++) {
+        for (int z = 1; z <= 5; z++) {
+          Vec4 p(x, y, z, 0.23424);
+
+          Vec4 p_normalized = Vec4::Zero();
+          p_normalized.template head<3>() = p.template head<3>().normalized();
+
+          Vec2 res;
+          bool success = cam.project(p, res);
+          if (success) {
+            Vec4 p_uproj;
+            cam.unproject(res, p_uproj);
+            EXPECT_TRUE(p_normalized.isApprox(
+                p_uproj, Sophus::Constants<Scalar>::epsilonSqrt()))
+                << "p_normalized " << p_normalized.transpose() << " p_uproj "
+                << p_uproj.transpose();
+          }
+        }
+      }
+    }
+  }
+}
+
+template <typename CamT>
+void testEquirectUnprojectJacobians() {
+  Eigen::aligned_vector<CamT> test_cams = CamT::getTestProjections();
+
+  using VecN = typename CamT::VecN;
+  using Vec2 = typename CamT::Vec2;
+  using Vec4 = typename CamT::Vec4;
+
+  using Mat42 = typename CamT::Mat42;
+  using Mat4N = typename CamT::Mat4N;
+
+  for (const CamT &cam : test_cams) {
+    for (int x = -5; x <= 5; x++) {
+      for (int y = -5; y <= 5; y++) {
+        for (int z = 1; z <= 5; z++) {
+          Vec4 p_3d(x, y, z, 0);
+
+          Vec2 p;
+          bool success = cam.project(p_3d, p);
+          if (success) {
+            Mat42 J_p;
+            Mat4N J_param;
+            Vec4 res1;
+            cam.unproject(p, res1, &J_p, &J_param);
+
+            test_jacobian(
+                "d_r_d_p", J_p,
+                [&](const Vec2 &dx) {
+                  Vec4 res = Vec4::Zero();
+                  cam.unproject(p + dx, res);
+                  return res;
+                },
+                Vec2::Zero());
+
+            test_jacobian(
+                "d_r_d_param", J_param,
+                [&](const VecN &dp) {
+                  Vec4 res = Vec4::Zero();
+                  CamT cam1 = cam;
+                  cam1 += dp;
+                  cam1.unproject(p, res);
+                  return res;
+                },
+                VecN::Zero());
+          }
+        }
+      }
+    }
+  }
+}
+
+// Verify that the frozen-intrinsics contract holds:
+//   - operator+= must not perturb the params
+//   - setFromInit must not overwrite the params
+template <typename CamT>
+void testEquirectFrozenParams() {
+  Eigen::aligned_vector<CamT> test_cams = CamT::getTestProjections();
+
+  using VecN = typename CamT::VecN;
+  using Vec4 = typename CamT::Vec4;
+
+  for (const CamT &cam_in : test_cams) {
+    const VecN before = cam_in.getParam();
+
+    CamT cam = cam_in;
+    VecN inc;
+    inc << 1, 2, 3, 4;
+    cam += inc;
+    EXPECT_TRUE(cam.getParam().isApprox(before));
+
+    cam.setFromInit(Vec4(100, 200, 300, 400));
+    EXPECT_TRUE(cam.getParam().isApprox(before));
+  }
+}
+
+TEST(CameraTestCase, EquirectFrozenParams) {
+  testEquirectFrozenParams<basalt::EquirectangularCamera<double>>();
+  testEquirectFrozenParams<basalt::EquirectangularCamera<float>>();
+}
+
+TEST(CameraTestCase, EquirectProjectJacobians) {
+  testEquirectProjectJacobian<basalt::EquirectangularCamera<double>>();
+}
+
+TEST(CameraTestCase, EquirectProjectUnproject) {
+  testEquirectProjectUnproject<basalt::EquirectangularCamera<double>>();
+}
+
+TEST(CameraTestCase, EquirectProjectUnprojectFloat) {
+  testEquirectProjectUnproject<basalt::EquirectangularCamera<float>>();
+}
+
+TEST(CameraTestCase, EquirectUnprojectJacobians) {
+  testEquirectUnprojectJacobians<basalt::EquirectangularCamera<double>>();
+}
+
 ////////////////////////////////////////////////////////////////
 
 TEST(CameraTestCase, PinholeProjectJacobians) {
