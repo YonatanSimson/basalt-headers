@@ -40,6 +40,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <basalt/camera/bal_camera.hpp>
 #include <basalt/camera/double_sphere_camera.hpp>
+#include <basalt/camera/equirectangular_camera.hpp>
 #include <basalt/camera/extended_camera.hpp>
 #include <basalt/camera/fov_camera.hpp>
 #include <basalt/camera/kannala_brandt_camera4.hpp>
@@ -74,7 +75,8 @@ class GenericCamera {
   using VariantT =
       std::variant<ExtendedUnifiedCamera<Scalar>, DoubleSphereCamera<Scalar>,
                    KannalaBrandtCamera4<Scalar>, UnifiedCamera<Scalar>,
-                   PinholeCamera<Scalar>, PinholeRadtan8Camera<Scalar>>;
+                   PinholeCamera<Scalar>, PinholeRadtan8Camera<Scalar>,
+                   EquirectangularCamera<Scalar>>;
 
  public:
   /// @brief Cast to different scalar type
