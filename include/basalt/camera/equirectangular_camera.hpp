@@ -72,6 +72,16 @@ class EquirectangularCamera {
   using Scalar = Scalar_;
   static constexpr int N = 4;  ///< Number of intrinsic parameters.
 
+  /// @brief Pixel residuals wrap in u with period W = 2π·fx.
+  ///
+  /// Equirectangular projection has a branch cut at longitude = ±π, where
+  /// the pixel column jumps between u=0 and u=W. AprilGrid corners
+  /// straddling that seam produce reprojection residuals of ~W pixels even
+  /// when the geometric error is tiny; the optimizer must wrap the u
+  /// residual by `W * round(Δu/W)` before accumulating gradients. The
+  /// LinearizeBase trait `camera_has_azimuthal_wrap` opts equi in.
+  static constexpr bool kAzimuthalWrap = true;
+
   using Vec2 = Eigen::Matrix<Scalar, 2, 1>;
   using Vec4 = Eigen::Matrix<Scalar, 4, 1>;
 
@@ -149,8 +159,8 @@ class EquirectangularCamera {
     const Scalar& y = p3d_eval[1];
     const Scalar& z = p3d_eval[2];
 
-    const Scalar s = x * x + z * z;             // squared horizontal radius
-    const Scalar r2 = s + y * y;                // squared 3D norm
+    const Scalar s = x * x + z * z;  // squared horizontal radius
+    const Scalar r2 = s + y * y;     // squared 3D norm
     const Scalar eps = Sophus::Constants<Scalar>::epsilonSqrt();
     const bool is_valid = (s > eps) && (r2 > eps);
 
