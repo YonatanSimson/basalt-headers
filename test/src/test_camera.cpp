@@ -711,3 +711,80 @@ TEST(CameraTestCase, EvalOrReferenceTypeCast) {
   testEvalOrReference<float, 3>();
   testEvalOrReference<float, 4>();
 }
+
+// MEI (unified + radial-tangential), "mei" (k1,k2,p1,p2) and "mei4" (k1..k4,p1,p2).
+// Unprojection Jacobians are not implemented (as for PinholeRadtan8Camera).
+// No float projection-Jacobian tests: the xi derivative is steep near the
+// projection's validity boundary (z = -d/xi or -xi d), which the test grid
+// always reaches, and the float central-difference step (1e-2) cannot follow it
+// there (1-2 % error in the xi column only). The Jacobian code is one template
+// for float and double; the double tests verify it.
+TEST(CameraTestCase, MeiProjectJacobians) {
+  testProjectJacobian<basalt::MeiCamera<double, 2>>();
+}
+TEST(CameraTestCase, Mei4ProjectJacobians) {
+  testProjectJacobian<basalt::MeiCamera<double, 4>>();
+}
+TEST(CameraTestCase, MeiProjectUnproject) {
+  testProjectUnproject<basalt::MeiCamera<double, 2>>();
+}
+TEST(CameraTestCase, MeiProjectUnprojectFloat) {
+  testProjectUnproject<basalt::MeiCamera<float, 2>>();
+}
+TEST(CameraTestCase, Mei4ProjectUnproject) {
+  testProjectUnproject<basalt::MeiCamera<double, 4>>();
+}
+TEST(CameraTestCase, Mei4ProjectUnprojectFloat) {
+  testProjectUnproject<basalt::MeiCamera<float, 4>>();
+}
+
+// setFromInit: basalt's init focal is in the unified alpha=0.5 (MEI xi=1)
+// convention; with the default xi0=1 the MEI focal is twice it.
+TEST(CameraTestCase, MeiSetFromInit) {
+  if (std::getenv("BASALT_MEI_XI_INIT") || std::getenv("BASALT_MEI_DIST_INIT")) {
+    GTEST_SKIP() << "checks the defaults; unset BASALT_MEI_XI_INIT / BASALT_MEI_DIST_INIT";
+  }
+  basalt::MeiCamera<double, 4> cam;
+  cam.setFromInit(Eigen::Vector4d(800, 810, 1500, 1505));
+  const auto& p = cam.getParam();
+  EXPECT_DOUBLE_EQ(p[0], 1600);
+  EXPECT_DOUBLE_EQ(p[1], 1620);
+  EXPECT_DOUBLE_EQ(p[2], 1500);
+  EXPECT_DOUBLE_EQ(p[3], 1505);
+  EXPECT_DOUBLE_EQ(p[4], 1.0);
+  EXPECT_TRUE(p.tail<6>().isZero());
+  EXPECT_EQ(basalt::GenericCamera<double>::fromString("mei4").getName(), "mei4");
+  EXPECT_EQ(basalt::GenericCamera<double>::fromString("mei").getName(), "mei");
+}
+
+TEST(CameraTestCase, MeiParseXiInitReturnsDefaultWhenUnsetOrEmpty) {
+  EXPECT_DOUBLE_EQ(basalt::MeiCameraOptions::parseXiInit(nullptr), 1.0);
+  EXPECT_DOUBLE_EQ(basalt::MeiCameraOptions::parseXiInit(""), 1.0);
+}
+
+TEST(CameraTestCase, MeiParseXiInitReturnsValidNumber) {
+  EXPECT_DOUBLE_EQ(basalt::MeiCameraOptions::parseXiInit("1.5"), 1.5);
+  EXPECT_DOUBLE_EQ(basalt::MeiCameraOptions::parseXiInit("0"), 0.0);
+}
+
+TEST(CameraTestCase, MeiParseXiInitReturnsDefaultWhenMalformed) {
+  for (const char* s : {"two", "1,5", "1.5x", "-0.5", "nan", "inf"}) {
+    EXPECT_DOUBLE_EQ(basalt::MeiCameraOptions::parseXiInit(s), 1.0) << s;
+  }
+}
+
+// BASALT_MEI_XI_FIXED=1: the xi column of d_proj_d_param is exactly zero, the
+// rest unchanged. Run as its own process with the variable set.
+TEST(CameraTestCase, MeiXiFixed) {
+  if (!basalt::MeiCameraOptions::xiFixed()) {
+    GTEST_SKIP() << "needs BASALT_MEI_XI_FIXED=1";
+  }
+  for (const auto& cam : basalt::MeiCamera<double, 4>::getTestProjections()) {
+    Eigen::Vector2d res;
+    Eigen::Matrix<double, 2, 4> J_p;
+    Eigen::Matrix<double, 2, 11> J_param;
+    ASSERT_TRUE(cam.project(Eigen::Vector4d(0.3, -0.2, 1.0, 1.0), res, &J_p, &J_param));
+    EXPECT_TRUE(J_param.col(4).isZero());
+    EXPECT_FALSE(J_param.col(5).isZero());
+  }
+}
